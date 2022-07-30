@@ -1,27 +1,35 @@
-from flask import Flask, render_template
-from flask_restx import Api
+from crypt import methods
+from flask import Flask, request, render_template, url_for
+from flask_restx import Api, Resource
+
+from pathlib import Path
+
+UPLOAD_FOLDER = Path(__file__).parent
+ALLOWED_EXTENSIONS = {'txt'}
 
 app = Flask(__name__)
 api = Api(app)
 
-@app.route('/')
+@app.route('/', methods=['GET'])
 def index():
-    pass
+    return render_template('index.html', 
+                           collect_data_route=url_for('collect_data'))
 
 
-@api.route('/collect-data', methods=('POST', ))
-def collect_data():
-    pass
+@api.route('/collect-data', methods=['POST'])
+@api.route('/check/<str:task_id>', methods=['GET'])
+class ProcessInnsRoute(Resource):
 
+    def post():
+        file = request.files.get('inns')
+        return file.filename if file else 'Ничего не получено'
 
-@api.route('/check/<str:task_id>')
-def check_status(task_id):
-    pass
+    def get(task_id):
+        pass
 
-
-@api.route('/download/<str:task_id>')
+@app.route('/download/<str:task_id>')
 def download(task_id):
     pass
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    pass

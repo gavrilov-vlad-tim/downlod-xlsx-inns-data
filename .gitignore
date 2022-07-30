@@ -4,3 +4,4 @@ venv/
 *.py[cod]
 *$py.class
 .env
+*.xlsx

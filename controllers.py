@@ -1,9 +1,68 @@
+from dataclasses import dataclass, asdict
 from datetime import datetime
-from pprint import pprint
 
 import pandas as pd
 from tqdm import tqdm
 from websbor import WebSborClient
+
+
+def parse_subfields(field):
+    code = field.get('code')
+    name = field.get('name')
+    return f'{code}-{name}'
+
+
+@dataclass(init=False)
+class Organization:
+    address_fact: str
+    date_reg: str
+    id: str
+    name: str
+    ogrn: str
+    okato_fact: str
+    okato_reg: str
+    okfs: str
+    okogu: str
+    okopf: str
+    oktmo_fact: str
+    oktmo_reg: str
+    okved2_fact: str
+    okpo: str
+    short_name: str
+
+    def __init__(self, **kwargs):
+        complex_fileds = (
+            'okato_fact',
+            'okato_reg',
+            'okfs',
+            'okogu',
+            'okopf',
+            'oktmo_fact',
+            'oktmo_reg',
+            'okved2_fact'
+        )
+        for key, value in kwargs.items():
+            if key in complex_fileds:
+                value = parse_subfields(value)
+                setattr(self, key, value)
+            else:
+                setattr(self, key, value)
+
+
+@dataclass(init=False)
+class Report:
+    comment: str 
+    end_time: str 
+    form_period: str 
+    index: str 
+    name: str
+    okud: str 
+    reported_period: str
+    org_id: str
+
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
 organisation_object_model = {
     "address_fact": "Фактический адресс",
@@ -24,21 +83,6 @@ organisation_object_model = {
     "short_name": "Краткое название"
 }
 
-org_model = ("address_fact", "date_reg", "id", "inn", "name",
-             "ogrn", 
-             ("okato_fact", ("code", "name")), 
-             ("okato_reg", ("code", "name")),
-             ("okfs", ("code", "name")),
-             ("okogu", ("code", "name")),
-             ("okopf", ("code", "name")),
-             "okpo",
-             ("oktmo_fact", ("code", "name")),
-             ("oktmo_reg", ("code", "name")),
-             ("okved2_fact", ("code", "name")),
-             "short_name")
-
-report_model = ("comment", "end_time", "form_period", "index", "name",
-                "okud", "reported_period")
 
 report_object_model = {
     "comment": "Комментарий",
@@ -52,39 +96,31 @@ report_object_model = {
 }
 
 
-def parse_object(obj, object_model):
-    new_obj = {}
-    for field in object_model:
-        if isinstance(field, tuple):
-            field, sub_fields = field
-            sub_obj = obj.get(field, {})
-            code, name = [sub_obj.get(sub_field, '') 
-                          for sub_field in sub_fields]
-            new_obj[field] = f'{code}-{name}'
-        else:
-            new_obj[field] = obj.get(field)
-    return new_obj              
-                
-
-def get_organisations_data(inns, save_path=None):
+def get_organisations_data(inns, buffer=None):
     total_orgs = []
     total_reports = []
     websbor_client = WebSborClient(delay=4, progress_bar=tqdm)
+
     print('Начат сбор данных организаций')
     orgs_data = websbor_client.get_organisations_by_inns_list(inns)
     print('Сбор закончен')
+
     for org in orgs_data:
-        org_id = org.get('id')
-        reports = [dict(**parse_object(report, report_model), org_id=org_id)
-                   for report in org.pop('reports', ())]
+        org_reports = org.pop('reports', ()) 
+        org = Organization(**org)
+        reports = [
+            asdict(Report(**report, org_id=org.id))
+            for report in org_reports
+        ]
         total_reports.extend(reports)
-        total_orgs.append(parse_object(org, org_model))  
-    return save_to_xlsx(total_orgs, total_reports, save_path=save_path)
+        total_orgs.append(asdict(org))
+
+    return save_to_xlsx(total_orgs, total_reports, buffer=buffer)
 
 
-def save_to_xlsx(orgs, reports, save_path=None):
+def save_to_xlsx(orgs, reports, buffer=None):
     date_time = datetime.now().strftime('%Y_%m_%d_%H_%M')
-    filename = save_path if save_path else f'данные_организаций_{date_time}.xlsx'
+    filename = buffer if buffer else f'данные_организаций_{date_time}.xlsx'
     writer = pd.ExcelWriter(filename, engine='xlsxwriter')
     workbook = writer.book
     orgs_sheet = workbook.add_worksheet('Организации')
@@ -93,12 +129,12 @@ def save_to_xlsx(orgs, reports, save_path=None):
     writer.sheets['Отчеты'] = reports_sheet
 
     df_orgs = pd.DataFrame(orgs)
-    df_orgs = df_orgs.astype({'id': int, 'inn': int, 'ogrn': int, 'okpo': int})
     df_orgs.rename(columns=organisation_object_model, inplace=True)
+    print(df_orgs.dtypes)
+    print(df_orgs)
     df_orgs.to_excel(writer, sheet_name='Организации', startcol=0, startrow=0)
     
     df_reports = pd.DataFrame(reports)
-    df_reports = df_reports.astype({'okud': int, 'org_id': int})
     df_reports.rename(columns=report_object_model, inplace=True)
     df_reports.to_excel(writer, sheet_name='Отчеты', startcol=0, startrow=0)
     return writer
